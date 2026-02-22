@@ -137,9 +137,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
         if (interaction.customId === 'edit_color') {
             if (!userRoleData) return interaction.reply({ content: '❌ Crie um cargo primeiro!', ephemeral: true });
-            const modal = new ModalBuilder().setCustomId('modal_edit_color').setTitle('Cores');
-            const hexInput = new TextInputBuilder().setCustomId('hex_color').setLabel('HEX (#ffffff)').setStyle(TextInputStyle.Short).setRequired(true);
-            modal.addComponents(new ActionRowBuilder().addComponents(hexInput));
+            const modal = new ModalBuilder().setCustomId('modal_edit_color').setTitle('Cores / Gradiente');
+            const hexInput = new TextInputBuilder().setCustomId('hex_color').setLabel('Cor Sólida (HEX)').setPlaceholder('#ffffff').setStyle(TextInputStyle.Short).setRequired(false);
+            const grad1Input = new TextInputBuilder().setCustomId('grad_1').setLabel('Gradiente HEX 1 (Opcional)').setPlaceholder('#ff0000').setStyle(TextInputStyle.Short).setRequired(false);
+            const grad2Input = new TextInputBuilder().setCustomId('grad_2').setLabel('Gradiente HEX 2 (Opcional)').setPlaceholder('#0000ff').setStyle(TextInputStyle.Short).setRequired(false);
+            modal.addComponents(new ActionRowBuilder().addComponents(hexInput), new ActionRowBuilder().addComponents(grad1Input), new ActionRowBuilder().addComponents(grad2Input));
             return interaction.showModal(modal);
         }
 
@@ -193,14 +195,33 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
         if (interaction.customId === 'modal_edit_color') {
             let hex = interaction.fields.getTextInputValue('hex_color');
-            if (!hex.startsWith('#')) hex = `#${hex}`;
+            let grad1 = interaction.fields.getTextInputValue('grad_1');
+            let grad2 = interaction.fields.getTextInputValue('grad_2');
             const userRoleData = db.users[userId];
             const role = interaction.guild.roles.cache.get(userRoleData.roleId);
-            if (role) {
-                await role.setColor(hex);
-                await sendLog(interaction.guild, 'Cor Alterada', `O usuário <@${userId}> alterou a cor do cargo para **${hex}**.`);
-                return interaction.reply({ content: `✅ Cor ${hex} aplicada!`, ephemeral: true });
+            if (!role) return interaction.reply({ content: '❌ Cargo não encontrado.', ephemeral: true });
+
+            const formatHex = (h) => h.startsWith('#') ? h : `#${h}`;
+            const hexRegex = /^#?([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/;
+
+            if (grad1 && grad2) {
+                if (!hexRegex.test(grad1) || !hexRegex.test(grad2)) return interaction.reply({ content: '❌ Formato HEX de gradiente inválido!', ephemeral: true });
+                // Usando a API nativa para gradientes (requer suporte da guild)
+                await role.edit({ color: 0, colors: [parseInt(grad1.replace('#', ''), 16), parseInt(grad2.replace('#', ''), 16)] }).catch(async () => {
+                    // Fallback se a guild não suportar gradiente nativo via API
+                    await role.setColor(formatHex(grad1));
+                });
+                await sendLog(interaction.guild, 'Gradiente Aplicado', `O usuário <@${userId}> aplicou um gradiente: **${grad1}** e **${grad2}**.`);
+                return interaction.reply({ content: `✅ Gradiente aplicado com sucesso!`, ephemeral: true });
             }
+
+            if (hex) {
+                if (!hexRegex.test(hex)) return interaction.reply({ content: '❌ Formato HEX inválido!', ephemeral: true });
+                await role.edit({ color: formatHex(hex), colors: [] });
+                await sendLog(interaction.guild, 'Cor Alterada', `O usuário <@${userId}> alterou a cor para **${formatHex(hex)}**.`);
+                return interaction.reply({ content: `✅ Cor ${formatHex(hex)} aplicada!`, ephemeral: true });
+            }
+            return interaction.reply({ content: '❌ Nenhuma cor válida fornecida.', ephemeral: true });
         }
 
         if (interaction.customId === 'modal_share_role') {

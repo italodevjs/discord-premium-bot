@@ -200,23 +200,32 @@ client.on(Events.InteractionCreate, async (interaction) => {
             const role = interaction.guild.roles.cache.get(userRoleData.roleId);
             if (!role) return interaction.reply({ content: '❌ Cargo não encontrado.', flags: [MessageFlags.Ephemeral] });
 
-            const hexToNum = (h) => parseInt(h.replace('#', ''), 16);
+            const hexToNum = (h) => {
+                const clean = h.replace('#', '').trim();
+                return parseInt(clean, 16);
+            };
 
-            if (grad1 && grad2) {
-                await role.edit({ colors: [hexToNum(grad1), hexToNum(grad2)] }).catch(async () => { 
-                    await role.edit({ color: hexToNum(grad1) }); 
-                });
-                await sendLog(interaction.guild, 'Gradiente Aplicado', `O usuário <@${userId}> aplicou um gradiente: **${grad1}** e **${grad2}**.`);
-                return interaction.reply({ content: `✅ Gradiente aplicado!`, flags: [MessageFlags.Ephemeral] });
+            try {
+                if (grad1 && grad2) {
+                    const c1 = hexToNum(grad1);
+                    const c2 = hexToNum(grad2);
+                    console.log(`🎨 Tentando aplicar gradiente: ${grad1} (${c1}) e ${grad2} (${c2})`);
+                    await role.edit({ colors: [c1, c2] });
+                    await sendLog(interaction.guild, 'Gradiente Aplicado', `O usuário <@${userId}> aplicou um gradiente: **${grad1}** e **${grad2}**.`);
+                    return interaction.reply({ content: `✅ Gradiente aplicado!`, flags: [MessageFlags.Ephemeral] });
+                }
+                if (hex) {
+                    const c = hexToNum(hex);
+                    console.log(`🎨 Tentando aplicar cor sólida: ${hex} (${c})`);
+                    await role.edit({ colors: [c] });
+                    await sendLog(interaction.guild, 'Cor Alterada', `O usuário <@${userId}> alterou a cor para **${hex}**.`);
+                    return interaction.reply({ content: `✅ Cor ${hex} aplicada!`, flags: [MessageFlags.Ephemeral] });
+                }
+            } catch (error) {
+                console.error('❌ Erro ao editar cargo:', error);
+                return interaction.reply({ content: `❌ Erro ao aplicar cor: ${error.message}`, flags: [MessageFlags.Ephemeral] });
             }
-            if (hex) {
-                await role.edit({ colors: [hexToNum(hex)] }).catch(async () => {
-                    await role.edit({ color: hexToNum(hex) });
-                });
-                await sendLog(interaction.guild, 'Cor Alterada', `O usuário <@${userId}> alterou a cor para **${hex}**.`);
-                return interaction.reply({ content: `✅ Cor ${hex} aplicada!`, flags: [MessageFlags.Ephemeral] });
-            }
-            return interaction.reply({ content: '❌ Nenhuma cor válida.', flags: [MessageFlags.Ephemeral] });
+            return interaction.reply({ content: '❌ Nenhuma cor válida fornecida.', flags: [MessageFlags.Ephemeral] });
         }
 
         if (interaction.customId === 'modal_share_role') {

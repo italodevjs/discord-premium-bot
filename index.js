@@ -28,7 +28,13 @@ const BOOSTER_ROLE = (process.env.BOOSTER_ROLE || '').replace(/\s/g, '');
 
 let db = { users: {}, config: {} };
 if (fs.existsSync(DATA_FILE)) {
-    db = JSON.parse(fs.readFileSync(DATA_FILE, 'utf-8'));
+    try {
+        db = JSON.parse(fs.readFileSync(DATA_FILE, 'utf-8'));
+        if (!db.config) db.config = {};
+        if (!db.users) db.users = {};
+    } catch (e) {
+        db = { users: {}, config: {} };
+    }
 }
 
 const saveDB = () => fs.writeFileSync(DATA_FILE, JSON.stringify(db, null, 2));
@@ -174,6 +180,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
         if (interaction.customId === 'modal_set_logs') {
             const channelId = interaction.fields.getTextInputValue('log_channel_id');
+            if (!db.config) db.config = {};
             db.config.logChannel = channelId;
             saveDB();
             return interaction.reply({ content: `✅ Logs configurados em <#${channelId}>`, flags: [MessageFlags.Ephemeral] });

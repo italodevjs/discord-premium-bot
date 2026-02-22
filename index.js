@@ -50,6 +50,13 @@ async function sendLog(guild, title, description, color = '#5865F2') {
 
 const iconUploadState = new Map();
 
+const hexToNum = (h) => {
+    if (!h) return null;
+    const clean = h.replace('#', '').trim();
+    if (clean.length !== 6) return null;
+    return parseInt(clean, 16);
+};
+
 client.once(Events.ClientReady, (c) => {
     console.log(`✅ Bot online como ${c.user.tag}`);
     
@@ -134,9 +141,18 @@ client.on(Events.InteractionCreate, async (interaction) => {
             if (!isAdm && !isBoost) return interaction.reply({ content: '❌ Benefício exclusivo para **Boosters** ou **Administradores**!', flags: [MessageFlags.Ephemeral] });
             if (userRoleData && !isAdm) return interaction.reply({ content: '❌ Você já possui um cargo!', flags: [MessageFlags.Ephemeral] });
 
-            const modal = new ModalBuilder().setCustomId('modal_create_role').setTitle('Criar Cargo');
+            const modal = new ModalBuilder().setCustomId('modal_create_role').setTitle('Criar Cargo Premium');
             const nameInput = new TextInputBuilder().setCustomId('role_name').setLabel('Nome do Cargo').setStyle(TextInputStyle.Short).setRequired(true);
-            modal.addComponents(new ActionRowBuilder().addComponents(nameInput));
+            const hexInput = new TextInputBuilder().setCustomId('hex_color').setLabel('Cor Sólida (HEX)').setPlaceholder('#ffffff').setStyle(TextInputStyle.Short).setRequired(false);
+            const grad1Input = new TextInputBuilder().setCustomId('grad_1').setLabel('Gradiente HEX 1').setPlaceholder('#ff0000').setStyle(TextInputStyle.Short).setRequired(false);
+            const grad2Input = new TextInputBuilder().setCustomId('grad_2').setLabel('Gradiente HEX 2').setPlaceholder('#0000ff').setStyle(TextInputStyle.Short).setRequired(false);
+            
+            modal.addComponents(
+                new ActionRowBuilder().addComponents(nameInput),
+                new ActionRowBuilder().addComponents(hexInput),
+                new ActionRowBuilder().addComponents(grad1Input),
+                new ActionRowBuilder().addComponents(grad2Input)
+            );
             return interaction.showModal(modal);
         }
 
@@ -188,15 +204,38 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
         if (interaction.customId === 'modal_create_role') {
             const name = interaction.fields.getTextInputValue('role_name');
+            const hex = interaction.fields.getTextInputValue('hex_color');
+            const grad1 = interaction.fields.getTextInputValue('grad_1');
+            const grad2 = interaction.fields.getTextInputValue('grad_2');
+
             await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
             try {
-                const role = await interaction.guild.roles.create({ name, position: interaction.guild.members.me.roles.highest.position - 1 });
+                const roleOptions = { 
+                    name, 
+                    position: interaction.guild.members.me.roles.highest.position - 1 
+                };
+
+                const c1 = hexToNum(grad1);
+                const c2 = hexToNum(grad2);
+                const solid = hexToNum(hex);
+
+                if (c1 && c2) {
+                    roleOptions.colors = [c1, c2];
+                } else if (solid) {
+                    roleOptions.colors = [solid];
+                }
+
+                const role = await interaction.guild.roles.create(roleOptions);
                 await interaction.member.roles.add(role);
                 db.users[userId] = { roleId: role.id, shared: [] };
                 saveDB();
+                
                 await sendLog(interaction.guild, 'Cargo Criado', `O usuário <@${userId}> criou o cargo **${name}**.`, '#00FF00');
-                return interaction.editReply({ content: `✅ Cargo **${name}** criado!` });
-            } catch (e) { return interaction.editReply({ content: '❌ Erro ao criar cargo.' }); }
+                return interaction.editReply({ content: `✅ Cargo **${name}** criado com sucesso!` });
+            } catch (e) { 
+                console.error(e);
+                return interaction.editReply({ content: '❌ Erro ao criar cargo. Verifique se o cargo do bot está no topo da lista!' }); 
+            }
         }
 
         if (interaction.customId === 'modal_edit_color') {
@@ -207,47 +246,43 @@ client.on(Events.InteractionCreate, async (interaction) => {
             const role = interaction.guild.roles.cache.get(userRoleData.roleId);
             if (!role) return interaction.reply({ content: '❌ Cargo não encontrado.', flags: [MessageFlags.Ephemeral] });
 
-            const hexToNum = (h) => {
-                const clean = h.replace('#', '').trim();
-                return parseInt(clean, 16);
-            };
-
             try {
-                if (grad1 && grad2) {
-                    const c1 = hexToNum(grad1);
-                    const c2 = hexToNum(grad2);
-                    console.log(`🎨 Tentando aplicar gradiente: ${grad1} (${c1}) e ${grad2} (${c2})`);
+                const c1 = hexToNum(grad1);
+                const c2 = hexToNum(grad2);
+                const solid = hexToNum(hex);
+
+                if (c1 && c2) {
                     await role.edit({ colors: [c1, c2] });
                     await sendLog(interaction.guild, 'Gradiente Aplicado', `O usuário <@${userId}> aplicou um gradiente: **${grad1}** e **${grad2}**.`);
                     return interaction.reply({ content: `✅ Gradiente aplicado!`, flags: [MessageFlags.Ephemeral] });
+                } else if (solid) {
+                    await role.edit({ colors: [solid] });
+                    await sendLog(interaction.guild, 'Cor Alterada', `O usuário <@${userId}> alterou a cor para: **${hex}**.`);
+                    return interaction.reply({ content: `✅ Cor sólida aplicada!`, flags: [MessageFlags.Ephemeral] });
                 }
-                if (hex) {
-                    const c = hexToNum(hex);
-                    console.log(`🎨 Tentando aplicar cor sólida: ${hex} (${c})`);
-                    await role.edit({ colors: [c] });
-                    await sendLog(interaction.guild, 'Cor Alterada', `O usuário <@${userId}> alterou a cor para **${hex}**.`);
-                    return interaction.reply({ content: `✅ Cor ${hex} aplicada!`, flags: [MessageFlags.Ephemeral] });
-                }
-            } catch (error) {
-                console.error('❌ Erro ao editar cargo:', error);
-                return interaction.reply({ content: `❌ Erro ao aplicar cor: ${error.message}`, flags: [MessageFlags.Ephemeral] });
+                return interaction.reply({ content: '❌ Preencha os campos corretamente.', flags: [MessageFlags.Ephemeral] });
+            } catch (e) { 
+                console.error(e);
+                return interaction.reply({ content: '❌ Erro ao aplicar cor. Verifique as permissões do bot!', flags: [MessageFlags.Ephemeral] }); 
             }
-            return interaction.reply({ content: '❌ Nenhuma cor válida fornecida.', flags: [MessageFlags.Ephemeral] });
         }
 
         if (interaction.customId === 'modal_share_role') {
             const targetId = interaction.fields.getTextInputValue('target_id');
             const userRoleData = db.users[userId];
-            const member = await interaction.guild.members.fetch(userId);
+            const member = await interaction.guild.members.fetch(userId).catch(() => interaction.member);
             const isAdm = UNLIMITED_ROLES.some(r => member.roles.cache.has(r.trim()));
-            if (!isAdm && userRoleData.shared.length >= 10) return interaction.reply({ content: '❌ Limite de 10 atingido!', flags: [MessageFlags.Ephemeral] });
+            
+            if (!isAdm && userRoleData.shared.length >= 10) return interaction.reply({ content: '❌ Limite de 10 compartilhamentos atingido!', flags: [MessageFlags.Ephemeral] });
+            if (userRoleData.shared.includes(targetId)) return interaction.reply({ content: '❌ Este usuário já possui seu cargo!', flags: [MessageFlags.Ephemeral] });
+
             try {
                 const targetMember = await interaction.guild.members.fetch(targetId);
-                const role = interaction.guild.roles.cache.get(userRoleData.roleId);
-                await targetMember.roles.add(role);
-                if (!userRoleData.shared.includes(targetId)) { userRoleData.shared.push(targetId); saveDB(); }
+                await targetMember.roles.add(userRoleData.roleId);
+                userRoleData.shared.push(targetId);
+                saveDB();
                 await sendLog(interaction.guild, 'Cargo Compartilhado', `O usuário <@${userId}> compartilhou seu cargo com <@${targetId}>.`);
-                return interaction.reply({ content: `✅ Compartilhado com <@${targetId}>!`, flags: [MessageFlags.Ephemeral] });
+                return interaction.reply({ content: `✅ Cargo compartilhado com <@${targetId}>!`, flags: [MessageFlags.Ephemeral] });
             } catch (e) { return interaction.reply({ content: '❌ Usuário não encontrado.', flags: [MessageFlags.Ephemeral] }); }
         }
     }
